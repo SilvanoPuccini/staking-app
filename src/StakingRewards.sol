@@ -71,14 +71,12 @@ contract StakingRewards is Ownable, ReentrancyGuard {
         if (totalStaked == 0) {
             return rewardPerTokenStored;
         }
-        return rewardPerTokenStored
-            + ((lastTimeRewardApplicable() - lastUpdateTime) * rewardRate * 1e18) / totalStaked;
+        return rewardPerTokenStored + ((lastTimeRewardApplicable() - lastUpdateTime) * rewardRate * 1e18) / totalStaked;
     }
 
     /// @notice Total claimable rewards for `account` (checkpointed + accrued).
     function earned(address account) public view returns (uint256) {
-        return (balances[account] * (rewardPerToken() - _userRewardPerTokenPaid[account])) / 1e18
-            + _rewards[account];
+        return (balances[account] * (rewardPerToken() - _userRewardPerTokenPaid[account])) / 1e18 + _rewards[account];
     }
 
     /// @notice Deposit `amount` STK under a fresh 30-day lockup.
