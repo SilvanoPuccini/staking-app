@@ -47,12 +47,12 @@ Chain strategy: stacked-to-main
 
 ## Phase 3: Invariants & Deploy (PR 3)
 
-- [ ] 3.1 RED: test/invariants/Handler.sol — stake/withdraw/claim/notify actions + random warp; ghost totalStaked/rewardsPaid
-- [ ] 3.2 RED: test/invariants/StakingRewardsInvariants.t.sol — balance ≥ totalStaked+ΣrewardsPaid; totalStaked==Σbalances; claims≤earned; withdraw only past lockupEnd; targetContract(Handler)
-- [ ] 3.3 GREEN: fix contract/handler until invariants hold; `forge test -vv` green
-- [ ] 3.4 script/Deploy.s.sol — anvil: deploy token → approve → deploy SR → fund 1M STK → notify 1M; broadcast + cast spot checks
+- [x] 3.1 RED: test/invariants/Handler.sol — stake/withdraw/claim/notify actions + random warp; ghost totalStaked/rewardsPaid
+- [x] 3.2 RED: test/invariants/StakingRewardsInvariants.t.sol — balance ≥ totalStaked+ΣrewardsPaid; totalStaked==Σbalances; claims≤earned; withdraw only past lockupEnd; targetContract(Handler)
+- [x] 3.3 GREEN: fix contract/handler until invariants hold; `forge test -vv` green
+- [x] 3.4 script/Deploy.s.sol — anvil: deploy token → approve → deploy SR → fund 1M STK → notify 1M; broadcast + cast spot checks
 
 ## Phase 4: Docs & Polish (PR 3)
 
-- [ ] 4.1 README.md — overview, architecture, security notes (lockup by design; recover STK reverts), anvil deploy/verify commands
-- [ ] 4.2 `forge fmt`; full `forge test` green; resolve open questions (pin OZ tag; document repeated-stake lockup extension D3)
+- [x] 4.1 README.md — overview, architecture, security notes (lockup by design; recover STK reverts), anvil deploy/verify commands
+- [x] 4.2 `forge fmt`; full `forge test` green; resolve open questions (pin OZ tag; document repeated-stake lockup extension D3)
