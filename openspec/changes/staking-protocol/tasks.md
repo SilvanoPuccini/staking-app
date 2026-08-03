@@ -36,14 +36,14 @@ Chain strategy: stacked-to-main
 
 ## Phase 2: StakingRewards — Unit & Fuzz (PR 2)
 
-- [ ] 2.1 RED: test/StakingRewards.t.sol — first deposit (totalStaked+1000, lockupEnd==ts+30d); stake(0) reverts
-- [ ] 2.2 RED: linear accrual (earned==1d of rate after vm.warp); zero-totalStaked returns stored value, no div-0
-- [ ] 2.3 RED: claim inside lockup transfers earned and zeroes it; no double claim
-- [ ] 2.4 RED: withdraw blocked in lockup reverts; at lockupEnd boundary full principal transfers, totalStaked decreases
-- [ ] 2.5 RED: exit atomic after lockup (principal+rewards same call); notify: rate==1M·1e18/7_776_000, capped-by-balance, owner-only revert
-- [ ] 2.6 RED: recoverERC20 external token ok / STK reverts; reentrancy via malicious token hook reverts
-- [ ] 2.7 GREEN: src/StakingRewards.sol — accumulator, 30d lockup, stake/withdraw/claim/exit, notify carryover+cap, recoverERC20, Ownable+ReentrancyGuard+SafeERC20+CEI; 2.1–2.6 green
-- [ ] 2.8 RED+GREEN: fuzz — vm.assume amounts/timestamps: earned monotonic via warp, no false reverts, overflow bound asserted
+- [x] 2.1 RED: test/StakingRewards.t.sol — first deposit (totalStaked+1000, lockupEnd==ts+30d); stake(0) reverts
+- [x] 2.2 RED: linear accrual (earned==1d of rate after vm.warp); zero-totalStaked returns stored value, no div-0
+- [x] 2.3 RED: claim inside lockup transfers earned and zeroes it; no double claim
+- [x] 2.4 RED: withdraw blocked in lockup reverts; at lockupEnd boundary full principal transfers, totalStaked decreases
+- [x] 2.5 RED: exit atomic after lockup (principal+rewards same call); notify: rate==1M·1e18/7_776_000, capped-by-balance, owner-only revert
+- [x] 2.6 RED: recoverERC20 external token ok / STK reverts; reentrancy via malicious token hook reverts
+- [x] 2.7 GREEN: src/StakingRewards.sol — accumulator, 30d lockup, stake/withdraw/claim/exit, notify carryover+cap, recoverERC20, Ownable+ReentrancyGuard+SafeERC20+CEI; 2.1–2.6 green
+- [x] 2.8 RED+GREEN: fuzz — vm.assume amounts/timestamps: earned monotonic via warp, no false reverts, overflow bound asserted
 
 ## Phase 3: Invariants & Deploy (PR 3)
 
