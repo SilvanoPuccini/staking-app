@@ -73,7 +73,9 @@ contract StakingRewardsTest is Test {
 
         vm.warp(block.timestamp + 1 days);
 
-        uint256 expected = sr.rewardRate() * 1 days;
+        // Spec formula: earned = (rewardPerToken * staked) / 1e18, where
+        // rewardPerToken = elapsed * rewardRate * 1e18 / totalStaked (two-step scaling).
+        uint256 expected = (sr.rewardRate() * 1 days * 1e18) / 1_000 ether * 1_000 ether / 1e18;
         assertGt(expected, 0);
         assertEq(sr.earned(alice), expected);
     }
@@ -94,7 +96,8 @@ contract StakingRewardsTest is Test {
         vm.warp(block.timestamp + 1 days);
 
         // Only the day after staking accrues; the 45 empty days pay nothing.
-        assertEq(sr.earned(alice), sr.rewardRate() * 1 days);
+        uint256 expected = (sr.rewardRate() * 1 days * 1e18) / 1_000 ether * 1_000 ether / 1e18;
+        assertEq(sr.earned(alice), expected);
     }
 
     // ---- Requirement: Claim During Lockup ----
