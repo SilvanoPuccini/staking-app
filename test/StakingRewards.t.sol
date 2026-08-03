@@ -294,6 +294,62 @@ contract StakingRewardsTest is Test {
         sr2.stake(100 ether);
         vm.stopPrank();
     }
+
+    // ---- Fuzz: amounts and time (task 2.8) ----
+
+    function testFuzzStakeWithdrawRoundTrip(uint96 amount) public {
+        vm.assume(amount > 0);
+        vm.assume(amount <= 1_000_000 ether);
+
+        _stakeAs(alice, amount);
+        vm.warp(sr.lockupEndOf(alice) + 1);
+
+        vm.prank(alice);
+        sr.withdraw(amount);
+
+        assertEq(sr.totalStaked(), 0);
+        assertEq(sr.balances(alice), 0);
+    }
+
+    function testFuzzAccruedRewardsBounded(uint96 amount, uint96 warpSecs) public {
+        vm.assume(amount > 0);
+        vm.assume(amount <= 1_000_000 ether);
+        vm.assume(warpSecs <= 2 * REWARDS_DURATION);
+
+        _fundAndNotify(FUND);
+        _stakeAs(alice, amount);
+        vm.warp(block.timestamp + warpSecs);
+
+        uint256 balBefore = token.balanceOf(alice);
+        vm.prank(alice);
+        sr.claimRewards();
+
+        uint256 claimed = token.balanceOf(alice) - balBefore;
+        // A sole staker can never earn more than the funded pool, even past periodFinish.
+        assertLe(claimed, FUND);
+    }
+
+    function testFuzzClaimIdempotence(uint96 amount) public {
+        vm.assume(amount > 0);
+        vm.assume(amount <= 1_000_000 ether);
+
+        _fundAndNotify(FUND);
+        _stakeAs(alice, amount);
+        vm.warp(block.timestamp + 10 days);
+
+        uint256 balBefore = token.balanceOf(alice);
+        vm.prank(alice);
+        sr.claimRewards();
+        uint256 firstClaim = token.balanceOf(alice) - balBefore;
+        assertGt(firstClaim, 0);
+
+        vm.prank(alice);
+        sr.claimRewards();
+
+        // Second claim transfers nothing further.
+        assertEq(token.balanceOf(alice), balBefore + firstClaim);
+        assertEq(sr.earned(alice), 0);
+    }
 }
 
 /// @dev Harmless ERC-20 used to prove recoverERC20 rescues unrelated tokens.
