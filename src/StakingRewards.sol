@@ -22,7 +22,7 @@ contract StakingRewards is Ownable, ReentrancyGuard {
     uint256 public constant LOCKUP_DURATION = 2_592_000;
 
     /// @notice The staking token; also the reward token (same-token rewards).
-    IERC20 public immutable stakingToken;
+    IERC20 public immutable STAKING_TOKEN;
 
     /// @notice Timestamp when the current emission period ends.
     uint256 public periodFinish;
@@ -58,7 +58,7 @@ contract StakingRewards is Ownable, ReentrancyGuard {
 
     constructor(address stakingToken_, address initialOwner) Ownable(initialOwner) {
         if (stakingToken_ == address(0)) revert ZeroAddress();
-        stakingToken = IERC20(stakingToken_);
+        STAKING_TOKEN = IERC20(stakingToken_);
     }
 
     /// @notice Latest timestamp at which rewards apply (period-end aware).
@@ -86,7 +86,7 @@ contract StakingRewards is Ownable, ReentrancyGuard {
         balances[msg.sender] += amount;
         totalStaked += amount;
         lockupEndOf[msg.sender] = block.timestamp + LOCKUP_DURATION;
-        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
+        STAKING_TOKEN.safeTransferFrom(msg.sender, address(this), amount);
         emit Staked(msg.sender, amount);
     }
 
@@ -96,7 +96,7 @@ contract StakingRewards is Ownable, ReentrancyGuard {
         if (balances[msg.sender] < amount) revert InsufficientStakedBalance();
         balances[msg.sender] -= amount;
         totalStaked -= amount;
-        stakingToken.safeTransfer(msg.sender, amount);
+        STAKING_TOKEN.safeTransfer(msg.sender, amount);
         emit Withdrawn(msg.sender, amount);
     }
 
@@ -106,7 +106,7 @@ contract StakingRewards is Ownable, ReentrancyGuard {
         uint256 reward = _rewards[msg.sender];
         if (reward > 0) {
             _rewards[msg.sender] = 0;
-            stakingToken.safeTransfer(msg.sender, reward);
+            STAKING_TOKEN.safeTransfer(msg.sender, reward);
             emit RewardPaid(msg.sender, reward);
         }
     }
@@ -121,11 +121,11 @@ contract StakingRewards is Ownable, ReentrancyGuard {
         totalStaked -= principal;
         _rewards[msg.sender] = 0;
         if (principal > 0) {
-            stakingToken.safeTransfer(msg.sender, principal);
+            STAKING_TOKEN.safeTransfer(msg.sender, principal);
             emit Withdrawn(msg.sender, principal);
         }
         if (reward > 0) {
-            stakingToken.safeTransfer(msg.sender, reward);
+            STAKING_TOKEN.safeTransfer(msg.sender, reward);
             emit RewardPaid(msg.sender, reward);
         }
     }
@@ -137,7 +137,7 @@ contract StakingRewards is Ownable, ReentrancyGuard {
     function notifyRewardAmount(uint256 reward) external onlyOwner updateReward(address(0)) {
         uint256 leftover = block.timestamp < periodFinish ? (periodFinish - block.timestamp) * rewardRate : 0;
         uint256 funded = reward + leftover;
-        uint256 balance = stakingToken.balanceOf(address(this));
+        uint256 balance = STAKING_TOKEN.balanceOf(address(this));
         if (funded > balance) {
             funded = balance;
         }
@@ -151,7 +151,7 @@ contract StakingRewards is Ownable, ReentrancyGuard {
     /// @dev STK is always excluded: it backs staked principal and the reward pool
     ///      (design D5). STK donations fund future rewards instead.
     function recoverERC20(address token, uint256 amount) external onlyOwner {
-        if (token == address(stakingToken)) revert CannotRecoverStakingToken();
+        if (token == address(STAKING_TOKEN)) revert CannotRecoverStakingToken();
         IERC20(token).safeTransfer(owner(), amount);
         emit Recovered(token, amount);
     }

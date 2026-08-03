@@ -295,6 +295,36 @@ contract StakingRewardsTest is Test {
         vm.stopPrank();
     }
 
+    // ---- Verify-report follow-ups: D3 lockup extension + defensive reverts ----
+
+    function testSecondStakeExtendsLockupEnd() public {
+        _stakeAs(alice, 1_000 ether);
+        uint256 lockupAfterFirst = sr.lockupEndOf(alice);
+
+        vm.warp(block.timestamp + 1 days);
+        _stakeAs(alice, 500 ether);
+
+        // Design D3: a repeated stake extends the whole position's lockup to
+        // the newest stake + 30 days (it does NOT keep the original end).
+        assertEq(sr.lockupEndOf(alice), block.timestamp + LOCKUP_DURATION);
+        assertGt(sr.lockupEndOf(alice), lockupAfterFirst);
+        assertEq(sr.totalStaked(), 1_500 ether);
+    }
+
+    function testConstructorZeroAddressReverts() public {
+        vm.expectRevert(StakingRewards.ZeroAddress.selector);
+        new StakingRewards(address(0), deployer);
+    }
+
+    function testWithdrawInsufficientStakedBalanceReverts() public {
+        _stakeAs(alice, 100 ether);
+        vm.warp(block.timestamp + LOCKUP_DURATION + 1); // past lockup
+
+        vm.prank(alice);
+        vm.expectRevert(StakingRewards.InsufficientStakedBalance.selector);
+        sr.withdraw(101 ether);
+    }
+
     // ---- Fuzz: amounts and time (task 2.8) ----
 
     function testFuzzStakeWithdrawRoundTrip(uint96 amount) public {

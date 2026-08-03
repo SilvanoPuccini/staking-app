@@ -113,9 +113,8 @@ contract Handler is Test {
 
         // Undistributed remainder of the current period — emission already
         // committed, so it must NOT be counted again for the new period.
-        uint256 leftover = block.timestamp < sr.periodFinish()
-            ? (sr.periodFinish() - block.timestamp) * sr.rewardRate()
-            : 0;
+        uint256 leftover =
+            block.timestamp < sr.periodFinish() ? (sr.periodFinish() - block.timestamp) * sr.rewardRate() : 0;
 
         token.transfer(address(sr), amount);
         fundedGhost += amount;
