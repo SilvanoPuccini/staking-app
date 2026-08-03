@@ -50,6 +50,7 @@ contract StakingTokenTest is Test {
     function testTransferUpdatesBalancesAndEmitsEvent() public {
         token.transfer(alice, 1_000 ether);
 
+        vm.prank(alice);
         vm.expectEmit(true, true, true, true);
         emit IERC20.Transfer(alice, bob, 400 ether);
 
@@ -62,6 +63,7 @@ contract StakingTokenTest is Test {
     function testTransferWithoutBalanceReverts() public {
         token.transfer(alice, 100 ether);
 
+        vm.prank(alice);
         vm.expectRevert(
             abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, alice, 100 ether, 101 ether)
         );
