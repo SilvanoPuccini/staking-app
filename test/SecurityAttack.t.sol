@@ -274,4 +274,31 @@ contract SecurityAttackTest is Test {
             token.balanceOf(attacker), FUND - 1_000 ether + attackerEarnedBefore, "attacker gained beyond own rewards"
         );
     }
+
+    // =====================================================================
+    // ATTACK 11: Flash stake + same-block early exit — with early-exit live,
+    // can an attacker stake and exit in the same block to (a) dodge the 30-day
+    // lockup and (b) capture rewards earned only for that instant?
+    // Expected: exitEarly() charges the 15% penalty on every in-lockup exit,
+    // so dodging the lockup costs 15% of principal. Same-block rewards are
+    // ~0 (no time elapsed), so the attacker cannot farm value — they LOSE the
+    // penalty instead.
+    // =====================================================================
+    function testAttack11_FlashStakeEarlyExitPaysPenalty() public {
+        _fundAndNotify(FUND);
+        _stakeAs(alice, 1_000 ether);
+
+        // Same block: stake then exit early before any time passes.
+        uint256 balBefore = token.balanceOf(attacker);
+        vm.startPrank(attacker);
+        token.approve(address(sr), 10_000 ether);
+        sr.stake(1_000 ether);
+        sr.exitEarly();
+        vm.stopPrank();
+
+        // Attacker got principal minus 15% penalty — they LOST 150 STK.
+        assertEq(token.balanceOf(attacker), balBefore - 150 ether, "flash stake did not pay penalty");
+        // Penalty reinforces the pool (balance - totalStaked surplus).
+        assertGt(token.balanceOf(address(sr)), FUND + 1_000 ether, "penalty did not stay in contract");
+    }
 }

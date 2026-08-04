@@ -105,6 +105,20 @@ contract Handler is Test {
         rewardsPaid += received - principal;
     }
 
+    /// @dev Actor exits EARLY during lockup, paying the penalty. The penalty
+    ///      stays in the contract (reinforcing the pool), so the ghost counts
+    ///      the FULL principal as withdrawn — the actor's balance drops to 0.
+    function exitEarly(uint256 seed) external {
+        address actor = _pickActor(seed);
+        if (block.timestamp >= sr.lockupEndOf(actor)) return; // use exit() instead
+        uint256 principal = sr.balances(actor);
+        if (principal == 0) return;
+
+        vm.prank(actor);
+        sr.exitEarly();
+        withdrawn[actor] += principal;
+    }
+
     /// @dev Owner pushes `amount` into the reward pool and starts a new period.
     function notify(uint256 seed) external {
         uint256 stash = token.balanceOf(address(this));

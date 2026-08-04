@@ -20,6 +20,11 @@ contract StakingRewards is Ownable, ReentrancyGuard {
     uint256 public constant REWARDS_DURATION = 7_776_000;
     /// @notice 30 days in seconds — minimum principal lockup per stake.
     uint256 public constant LOCKUP_DURATION = 2_592_000;
+    /// @notice Early-exit penalty in basis points: 15% of principal withheld
+    ///         and kept in the contract (design D7). The withheld amount stays
+    ///         in the reward pool and is redistributed to remaining stakers via
+    ///         the notify cap (balance - totalStaked) on the next funding.
+    uint256 public constant PENALTY_BPS = 1_500;
 
     /// @notice The staking token; also the reward token (same-token rewards).
     IERC20 public immutable STAKING_TOKEN;
@@ -46,6 +51,7 @@ contract StakingRewards is Ownable, ReentrancyGuard {
 
     event Staked(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
+    event EarlyExit(address indexed user, uint256 principal, uint256 penalty);
     event RewardAdded(uint256 reward);
     event RewardPaid(address indexed user, uint256 reward);
     event Recovered(address indexed token, uint256 amount);
@@ -53,6 +59,7 @@ contract StakingRewards is Ownable, ReentrancyGuard {
     error ZeroAddress();
     error StakeZero();
     error LockupNotEnded();
+    error LockupEnded();
     error InsufficientStakedBalance();
     error CannotRecoverStakingToken();
     error RewardPeriodTooSmall();
@@ -129,6 +136,28 @@ contract StakingRewards is Ownable, ReentrancyGuard {
             STAKING_TOKEN.safeTransfer(msg.sender, reward);
             emit RewardPaid(msg.sender, reward);
         }
+    }
+
+    /// @notice Emergency exit during lockup: withdraw full principal minus a
+    ///         penalty (PENALTY_BPS) that stays in the contract.
+    /// @dev Design D7 — liquidity escape hatch. Only available while the lockup
+    ///      is still active (reverts LockupEnded once it expired; use the
+    ///      penalty-free withdraw()/exit() then). The penalty is withheld from
+    ///      the payout and remains in the contract, reinforcing the reward pool:
+    ///      it becomes fundable surplus via the notify cap (balance - totalStaked).
+    ///      Accrued rewards stay claimable separately via claimRewards() — the
+    ///      penalty punishes early liquidity of principal, not earned work.
+    function exitEarly() external nonReentrant updateReward(msg.sender) {
+        if (block.timestamp >= lockupEndOf[msg.sender]) revert LockupEnded();
+        uint256 principal = balances[msg.sender];
+        if (principal == 0) revert InsufficientStakedBalance();
+        uint256 penalty = (principal * PENALTY_BPS) / 10_000;
+        uint256 payout = principal - penalty;
+        // CEI: state before external call.
+        balances[msg.sender] = 0;
+        totalStaked -= principal;
+        STAKING_TOKEN.safeTransfer(msg.sender, payout);
+        emit EarlyExit(msg.sender, principal, penalty);
     }
 
     /// @notice Fund a new 90-day emission period (owner only).
