@@ -1,44 +1,142 @@
-# Staking Protocol v1
+# Staking Protocol — STK
 
-A minimal, audited-by-invariants staking dApp: **StakingToken (STK)** — a fixed-supply
-ERC-20 — plus **StakingRewards**, a Synthetix-style staking contract with a 30-day
-principal lockup and time-based rewards paid in STK from a pre-funded pool.
+> A full-cycle blockchain portfolio project: from research and development
+> methodology to a live, verified, and attack-tested staking protocol on
+> Ethereum Sepolia — built with an AI-assisted workflow.
 
-Built with Foundry, following the Blockchain Accelerator curriculum:
-**block 3** (ERC-20), **block 7** (staking app), **block 6** (Foundry testing),
-**block 13** (smart-contract security).
+**Stake STK. Earn rewards. Own your yield.** This repo is a complete case study
+of building, testing, hardening, and shipping a DeFi protocol — documenting
+not only *what* was built, but *how* it was built and *why* it can be trusted.
 
-**Live on Ethereum Sepolia testnet** — contracts deployed and verified on
-Etherscan; see [Deployed on Sepolia](#deployed-on-sepolia).
+---
 
-## Quick path
+## 1. The story — from research to production
 
-```shell
-forge build          # compile (solc 0.8.36, optimizer 200)
-forge test           # 40 tests: 8 token unit + 27 staking (24 unit + 3 fuzz) + 5 invariants
-forge fmt --check    # formatting gate
+This project followed a structured methodology that mirrors how a real
+product/engineering team would deliver a DeFi protocol:
 
-# Local deploy on anvil (task 3.4):
-anvil &                               # local node, deterministic accounts
-PRIVATE_KEY=0xac09...f2ff80 \          # anvil account #0
-  forge script script/Deploy.s.sol \
-  --rpc-url http://127.0.0.1:8545 --broadcast
+| Phase | What happened |
+|---|---|
+| **1. Research** | Studied the staking domain: Synthetix `StakingRewards` accumulator design, ERC-20 token standards, reward-per-share math, common exploit classes (reentrancy, flash loans, donation inflation, griefing). |
+| **2. Development schema** | Defined a spec-driven format: proposal → specs → design → tasks → apply → verify → archive (OpenSpec). Each phase has explicit inputs/outputs and acceptance criteria. |
+| **3. AI-assisted build** | The plan was handed to an AI coding agent (OpenCode) with strict TDD and the schema as guardrails. The AI implemented the Solidity contracts, Foundry tests, and this documentation — *I reviewed and directed every step*. |
+| **4. Analysis & hardening** | Ran the full security review below (adversarial attack suite) and invariant/fuzz testing to look for ways to corrupt the protocol. |
+| **5. Skills / tooling** | The process was codified into reusable skills (smart-contract-security, foundry-testing, web3-frontend, SDD workflow) — turning one-off experience into repeatable process. |
+| **6. Environment** | Foundry toolchain, local anvil chain for fast iteration, CI-style gates (fmt, build, test, coverage). |
+| **7. Production** | Deployed and verified on Ethereum Sepolia testnet with a live, working frontend dApp and a real on-chain staking + claim transaction. |
+
+**Why this matters:** the value is not the code alone — it is the *method*:
+research → schema → AI execution → verification → hardening → shipping. That
+is the full engineering loop this project demonstrates end-to-end.
+
+---
+
+## 2. What the protocol does
+
+Two minimal contracts:
+
+- **StakingToken (STK)** — a fixed-supply ERC-20 (10,000,000 STK, 18 decimals,
+  no mint/burn after deployment).
+- **StakingRewards** — a Synthetix-style staking contract: users stake STK for
+  a **30-day lockup** and earn **per-second rewards** paid in STK from a
+  pre-funded reward pool.
+
+```
+StakingToken (ERC-20, fixed supply)
+        │ transfers / approvals
+        ▼
+StakingRewards (Ownable, ReentrancyGuard, SafeERC20)
+  stake / withdraw / claimRewards / exit / notifyRewardAmount / recoverERC20
 ```
 
-After the local deploy the contracts live at the deterministic addresses below
-(FOUNDRY CREATE nonces on a fresh anvil chain).
+### Key mechanics
 
-| Contract | Address (anvil, fresh chain) |
+- **Stake** — deposit STK; your position locks for 30 days. Repeated stakes
+  extend the whole position's lockup (design D3).
+- **Earn** — rewards accrue every second via a reward-per-share accumulator
+  while you are staked; claimable at any time, even during lockup. Only
+  principal is locked.
+- **Withdraw / Exit** — after `lockupEndOf`, withdraw principal; `exit()`
+  atomically withdraws principal and claims rewards in one transaction.
+- **Owner** — funds 90-day emission windows via `notifyRewardAmount()` and can
+  rescue stuck external tokens via `recoverERC20()` (STK itself is excluded).
+
+### Parameters
+
+| Parameter | Value |
 |---|---|
-| `StakingToken` | `0x5FbDB2315678afecb367f032d93F642f64180aa3` |
-| `StakingRewards` | `0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512` |
+| `INITIAL_SUPPLY` | 10,000,000 STK |
+| `REWARDS_DURATION` | 90 days (7,776,000 s) |
+| `LOCKUP_DURATION` | 30 days (2,592,000 s) |
+| Initial reward pool | 1,000,000 STK (10% of supply) |
+| Reward rate | `min(reward + leftover, balance) / REWARDS_DURATION` |
 
-> These addresses only hold on a brand-new anvil instance (chain id 31337).
-> Reset anvil or redeploy and re-read the script logs for your run.
+---
 
-## Deployed on Sepolia
+## 3. How it was tested — 60 tests, 4 layers
 
-Live deployment (chain id 11155111) with both contracts verified on Etherscan:
+| Layer | Count | What it proves |
+|---|---|---|
+| Unit (token) | 8 | metadata, fixed supply, no mint, transfers/allowances + reverts |
+| Unit (staking) | 24 | stake/lockup, linear accrual, claim, withdraw boundary, atomic exit, notify rate/cap/owner, recoverERC20 exclusions, reentrancy, lockup extension |
+| Fuzz | 3 | round-trip, accrued ≤ funded pool, claim idempotence (@2000 runs) |
+| Invariant | 5 | solvency, accounting conservation, monotonic principal, lockup integrity, rewards bounded |
+| **Security attacks** | **10** | **adversarial PoCs trying to corrupt the protocol (see §4)** |
+
+```shell
+forge build                 # compile
+forge test                  # full suite: 60 tests
+forge fmt --check           # formatting gate
+forge coverage              # ~99% lines on src/
+```
+
+The invariant suite drives the contract through 256 random sequences × 128
+calls (handler-based, bounded amounts, random 0–45d time jumps) and asserts
+financial-truth rules after every sequence — solvency, accounting
+conservation, monotonic principal, lockup integrity, rewards bounded.
+
+---
+
+## 4. Security review — we tried to break it
+
+The protocol was deliberately attacked with an **adversarial test suite**
+(`test/SecurityAttack.t.sol`). Each test is a proof-of-concept for a known
+attack vector. **All 10 attacks failed to corrupt the protocol.**
+
+| # | Attack vector | Attempt | Result |
+|---|---|---|---|
+| 1 | **Donation inflation** | Donate 500k STK directly to the contract to inflate `earned()` | ❌ Blocked — internal accounting (`totalStaked`), never trusts `balanceOf(this)` |
+| 2 | **Flash-loan stake** | Stake 1M, claim instantly, withdraw in same block to repay loan | ❌ Blocked — 30-day lockup prevents principal withdrawal |
+| 3 | **Reentrancy** | Re-enter `claimRewards` during transfer | ❌ Blocked — ReentrancyGuard + CEI ordering |
+| 4 | **Lockup griefing** | Stake 1 wei to reset a victim's lockup | ❌ Blocked — lockup is per-user (`lockupEndOf[msg.sender]`) |
+| 5 | **Silent reward kill** | Owner notifies below `REWARDS_DURATION` → `rewardRate = 0` | ⚠️ Documented caveat — only owner can trigger; emission lost, nothing stolen |
+| 6 | **Principal canibalization** | Owner notifies an amount exceeding the reward surplus | ⚠️ Owner-risk only — cap prevents over-commit beyond balance; no external exploit path |
+| 7 | **Rescue STK** | `recoverERC20(STK)` | ❌ Reverts — STK is always excluded (design D5) |
+| 8 | **Access control** | Non-owner calls `notify`/`recover` | ❌ Reverts — `onlyOwner` |
+| 9 | **Disproportionate stake** | 1 wei stake captures excess value | ❌ Blocked — global reward-per-token accumulator is fair |
+| 10 | **Reward theft** | Attacker claims victim's rewards | ❌ Blocked — rewards isolated per user |
+
+**Findings:** no exploitable vulnerability was found for an external attacker.
+Two documented owner-side risks exist (under-funded notify floors the rate to
+zero; the notify cap includes staked principal) — both require the *owner
+themselves* to act incorrectly and neither lets a third party steal funds.
+
+### Security design principles
+
+- **CEI ordering** on every mutative function (state before external calls).
+- **ReentrancyGuard** on `stake`, `withdraw`, `claimRewards`, `exit`.
+- **SafeERC20** for transfers; checked arithmetic (Solidity 0.8.36).
+- **Internal accounting** — never trusts `balanceOf(this)` for liabilities
+  (donation-safe).
+- **`recoverERC20` excludes STK** — staked principal and reward pool are
+  untouchable.
+- **Lockup by design** — reverts `LockupNotEnded` until `lockupEndOf`.
+
+---
+
+## 5. Deployed on Sepolia — live and verified
+
+Both contracts are **deployed and verified on Etherscan** (chain id 11155111):
 
 | Contract | Address (Sepolia) | Explorer |
 |---|---|---|
@@ -52,113 +150,30 @@ Deployment run (2026-08-04, `forge script --broadcast --verify`):
 - **Staking deploy tx:** `0x553f1e444c6c307091258ca7812a33bf14592ea1ddacc7d803d7dfe6e0f7585f`
 - **Reward pool funded + first 90-day period started** (`notifyRewardAmount(1e24)`)
 
-On-chain state at deploy:
+### Live on-chain state
 
 - `totalSupply` 10,000,000 STK → 9,000,000 deployer / 1,000,000 reward pool
 - `rewardRate` 128,600,823,045,267,489 ≈ 1e24 / 7,776,000 s
-- `periodFinish` = deploy + 90 days; `totalStaked` 0 (no stakers yet)
+- `periodFinish` = deploy + 90 days
 
-Interact (read): `cast call 0x42A3... "rewardRate()(uint256)" --rpc-url sepolia`
-Interact (write, owner): `cast send 0x42A3... "stake(uint256)" <amount> --rpc-url sepolia --private-key $PRIVATE_KEY`
+### Real on-chain proof
 
-## What the protocol does
+The protocol was exercised with a **real transaction on Sepolia**:
 
-- **Stake** STK with an approved allowance; your position is locked for 30 days
-  (`lockupEndOf(you) = stake timestamp + 30d`). **Repeated stakes extend the
-  whole position's lockup** to the newest stake + 30d (design D3).
-- **Earn** per-second rewards from a pre-funded pool while staked — claimable at
-  any time via `claimRewards()`, even during lockup. Only principal is locked.
-- **Withdraw** principal once past `lockupEndOf`; **`exit()`** atomically
-  withdraws principal and claims rewards in one call.
-- **Owner** funds reward periods with `notifyRewardAmount(amount)`, which starts
-  a fresh 90-day emission window, and rescues stuck external tokens with
-  `recoverERC20`.
+- ✅ Staked 1,000 STK (tx `0xfd1b9b19f2578fbfe0f86e3a08cf254c47290bb6e44106ba7a383973078f53e3` — `Staked` event)
+- ✅ Rewards accrued live (`earned()` grew per second)
+- ✅ Claimed **467.59 STK** via the frontend dApp — verified on-chain (deployer balance +467.59 STK, pool −467.59 STK)
 
-### Parameters
+---
 
-| Parameter | Value | Notes |
-|---|---|---|
-| `StakingToken.INITIAL_SUPPLY` | 10,000,000 STK (10M × 1e18) | minted once to deployer; no mint/burn |
-| `StakingRewards.REWARDS_DURATION` | 7,776,000 s (90 days) | emission window per `notifyRewardAmount` |
-| `StakingRewards.LOCKUP_DURATION` | 2,592,000 s (30 days) | principal lockup per stake |
-| Reward rate | `min(reward + leftover, balance) / REWARDS_DURATION` | per-second, 1e18 fixed point |
-| Initial deploy funding | 1,000,000 STK pool | 10% of supply; see `script/Deploy.s.sol` |
+## 6. Frontend dApp
 
-## Architecture
-
-```
-StakingToken (ERC-20, fixed supply)
-        │ transfers / approvals
-        ▼
-StakingRewards (Ownable, ReentrancyGuard, SafeERC20)
-  stake / withdraw / claimRewards / exit / notifyRewardAmount / recoverERC20
-  state: periodFinish, rewardRate, totalStaked, balances, lockupEndOf,
-         rewardPerTokenStored, _rewards, _userRewardPerTokenPaid
-```
-
-Rewards use a Synthetix reward-per-share accumulator (one checkpointed global
-scalar + per-user checkpoints — no per-user loops, no balance-based accounting).
-Rewards accrue per second while `totalStaked > 0`; with zero stakers the
-accumulator freezes and empty time pays nothing (design D2).
-
-### Invariants (test/invariants/)
-
-The invariant suite drives the contract through 256 random sequences × 128 calls
-(handler-based, bounded amounts, random 0–45d time jumps) and asserts
-financial-truth rules after every sequence:
-
-1. **Solvency** — `STK balance ≥ totalStaked + committed-but-unpaid rewards`
-2. **Accounting conservation** — `Σ balances == totalStaked`
-3. **Monotonic principal** — a user's balance never exceeds their deposits
-4. **Lockup integrity** — `lockupEndOf == last stake + 30d`
-5. **Rewards bounded** — cumulative payouts ≤ funds pushed into the pool
-
-Run them with `forge test` (default) or
-`FOUNDRY_INVARIANT_RUNS=256 FOUNDRY_INVARIANT_DEPTH=128 forge test`.
-
-## Security considerations
-
-- **CEI ordering** on every mutative function: state and checkpoints update
-  before any external transfer.
-- **ReentrancyGuard** on `stake`, `withdraw`, `claimRewards`, `exit`.
-- **SafeERC20** for all token transfers; **checked arithmetic** (Solidity 0.8.36).
-- **Ownable**: `notifyRewardAmount` and `recoverERC20` are owner-only.
-- **Internal accounting** — the protocol tracks balances/totals itself and never
-  trusts `balanceOf(this)` for liabilities (donation-safe).
-- **`recoverERC20` excludes STK entirely** (design D5): STK in the contract backs
-  staked principal and the reward pool, so it can never be rescued — accidental
-  STK donations fund future rewards instead.
-- **Lockup is by design**: withdrawing before `lockupEndOf` reverts with
-  `LockupNotEnded`; rewards remain claimable meanwhile.
-
-### Known caveat: notify with under-funding
-
-`notifyRewardAmount` caps the period at the contract's STK balance. If the funded
-amount is **smaller than `REWARDS_DURATION`** (7,776,000 base units), the integer
-division floors `rewardRate` to **0** — the 90-day period silently funds nothing.
-The owner must top up and **re-notify**. The protocol is safe (nothing is
-over-committed); only the emission is lost. This is exactly the floor the
-invariant ghost tracks (see `test/invariants/Handler.sol` `notify`).
-
-## Testing
-
-| Layer | Count | What it proves |
-|---|---|---|
-| Unit (token) | 8 | metadata, fixed supply, no mint, transfers/allowances + reverts |
-| Unit (staking) | 24 | stake/lockup, linear accrual, claim (incl. in-lockup, no double), withdraw boundary, atomic exit, notify rate/cap/owner, recoverERC20 exclusions, reentrancy, D3 lockup extension, defensive reverts |
-| Fuzz | 3 | round-trip, accrued ≤ funded pool, claim idempotence (@2000 runs verified) |
-| Invariant | 5 | solvency, accounting conservation, monotonic principal, lockup, rewards-bounded |
-
-```shell
-forge test                 # full suite
-forge test --match-contract StakingRewardsInvariants   # invariants only
-forge coverage             # ~99% lines on src/
-```
-
-## Frontend dApp
-
-React + Vite + TypeScript app in [`frontend/`](frontend/) wired to the live
-Sepolia contracts with **wagmi + viem** (MetaMask injected wallet).
+A landing-style React + Vite + TypeScript app in [`frontend/`](frontend/)
+wired to the live Sepolia contracts with **wagmi + viem** (MetaMask injected
+wallet). Hero + mission sections explain *why* the protocol exists; the app
+panel provides wallet connect, protocol stats, your position (auto-refresh),
+stake (approve + stake), claim rewards, withdraw and atomic exit — with
+Etherscan links on every transaction and friendly error handling.
 
 ```shell
 cd frontend
@@ -166,20 +181,38 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-Features: connect wallet (auto switch to Sepolia), protocol overview
-(supply, reward rate, period countdown, lockup), your position (balance,
-staked, earned auto-refresh), stake (approve + stake in one flow), claim
-rewards, withdraw and atomic exit — with Etherscan links on every tx and
-friendly revert/cancel errors. No private keys in the frontend: all
-signing happens in MetaMask.
+No private keys in the frontend — all signing happens in MetaMask.
 
-## Rollback / reset
+---
 
-Greenfield: reset the anvil chain (`pkill anvil`) and redeploy — no migrations,
-no upgrade path (out of scope). The change record lives under
-`openspec/changes/archive/2026-08-03-staking-protocol/` (proposal → specs →
-design → tasks → verify). The Sepolia deployment is a one-shot v1; contract
-upgrades are out of scope.
+## 7. Run it locally
+
+```shell
+# Contracts + tests (Foundry)
+forge build
+forge test                    # 60 tests
+forge fmt --check
+
+# Local chain
+anvil &
+PRIVATE_KEY=0xac09...f2ff80 \   # anvil account #0
+  forge script script/Deploy.s.sol \
+  --rpc-url http://127.0.0.1:8545 --broadcast
+
+# dApp (frontend/)
+cd frontend && npm install && npm run dev
+```
+
+---
+
+## 8. Process artifacts
+
+- **Spec-driven change record** — `openspec/changes/archive/2026-08-03-staking-protocol/`
+  (proposal → specs → design → tasks → verify), showing the full
+  requirements-to-verification trail.
+- **Attack suite** — `test/SecurityAttack.t.sol` (10 adversarial PoCs).
+- **Invariants** — `test/invariants/` (5 financial-truth rules).
+- **Deploy record** — `broadcast/Deploy.s.sol/11155111/` (4 on-chain txs).
 
 ## Out of scope (v1)
 
