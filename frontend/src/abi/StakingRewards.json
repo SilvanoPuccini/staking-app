@@ -30,6 +30,19 @@
   },
   {
     "type": "function",
+    "name": "PENALTY_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "REWARDS_DURATION",
     "inputs": [],
     "outputs": [
@@ -102,6 +115,13 @@
   {
     "type": "function",
     "name": "exit",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "exitEarly",
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
@@ -308,6 +328,31 @@
   },
   {
     "type": "event",
+    "name": "EarlyExit",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "principal",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "penalty",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "OwnershipTransferred",
     "inputs": [
       {
@@ -426,6 +471,11 @@
   },
   {
     "type": "error",
+    "name": "LockupEnded",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "LockupNotEnded",
     "inputs": []
   },
@@ -454,6 +504,11 @@
   {
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RewardPeriodTooSmall",
     "inputs": []
   },
   {

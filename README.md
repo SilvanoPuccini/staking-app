@@ -51,7 +51,8 @@ StakingToken (ERC-20, fixed supply)
         │ transfers / approvals
         ▼
 StakingRewards (Ownable, ReentrancyGuard, SafeERC20)
-  stake / withdraw / claimRewards / exit / notifyRewardAmount / recoverERC20
+  stake / withdraw / claimRewards / exit / exitEarly
+  notifyRewardAmount / recoverERC20
 ```
 
 ### Mecánicas clave
@@ -64,6 +65,10 @@ StakingRewards (Ownable, ReentrancyGuard, SafeERC20)
 - **Withdraw / Exit** — después de `lockupEndOf`, retirás el principal;
   `exit()` retira el principal y reclama las recompensas atómicamente en una
   sola transacción.
+- **Early exit** — durante el lockup, `exitEarly()` retira todo el principal
+  con una penalidad del **15%** (`PENALTY_BPS`) que queda en el contrato y
+  refuerza el pool para los stakers que sí esperan. Las recompensas acumuladas
+  se reclaman por separado, sin penalidad (diseño D7).
 - **Owner** — financia ventanas de emisión de 90 días vía
   `notifyRewardAmount()` y puede rescatar tokens externos atascados vía
   `recoverERC20()` (STK mismo queda excluido).
@@ -76,23 +81,25 @@ StakingRewards (Ownable, ReentrancyGuard, SafeERC20)
 | `REWARDS_DURATION` | 90 días (7,776,000 s) |
 | `LOCKUP_DURATION` | 30 días (2,592,000 s) |
 | Pool inicial de recompensas | 1,000,000 STK (10% del suministro) |
+| `PENALTY_BPS` | 1,500 (15% de penalidad en early exit) |
 | Reward rate | `min(reward + leftover, balance - totalStaked) / REWARDS_DURATION` |
 
 ---
 
-## 3. Cómo se probó — 58 tests, 5 capas
+## 3. Cómo se probó — 67 tests, 6 capas
 
 | Capa | Cantidad | Qué demuestra |
 |---|---|---|
 | Unit (token) | 8 | metadatos, suministro fijo, sin mint, transfers/allowances + reverts |
 | Unit (staking) | 27 | stake/lockup, acumulación lineal, claim, límite de withdraw, exit atómico, notify rate/cap/owner, exclusiones de recoverERC20, reentrancy, extensión de lockup + casos estilo fuzz de round-trip y claim idempotente |
+| Early exit | 8 | penalidad exacta del 15%, revert tras el lockup, revert con stake cero, rewards reclamables luego, otros stakers intactos, refuerzo del pool, PoC de reentrancy |
 | Gobernanza | 8 | owner = timelock, acciones de owner bloqueadas directas, flujo schedule/wait/execute, atacante no puede schedule/execute, recoverERC20 timelockeado, fix endurecido sobrevive al timelock |
 | Invariant | 5 | solvencia, conservación contable, principal monótono, integridad del lockup, recompensas acotadas |
-| **Security attacks** | **10** | **PoCs adversariales que intentan corromper el protocolo (ver §4)** |
+| **Security attacks** | **11** | **PoCs adversariales que intentan corromper el protocolo (ver §4)** |
 
 ```shell
 forge build                 # compilar
-forge test                  # suite completa: 58 tests
+forge test                  # suite completa: 67 tests
 forge fmt --check           # gate de formato
 forge coverage              # ~99% de líneas en src/
 ```
@@ -109,8 +116,8 @@ recompensas acotadas.
 
 El protocolo fue atacado deliberadamente con una **suite de tests
 adversariales** (`test/SecurityAttack.t.sol`). Cada test es un
-proof-of-concept de un vector de ataque conocido. **Los 10 ataques fallaron en
-corromper el protocolo** (8 bloqueados por diseño, 2 cerrados por hardening
+proof-of-concept de un vector de ataque conocido. **Los 11 ataques fallaron en
+corromper el protocolo** (9 bloqueados por diseño, 2 cerrados por hardening
 del contrato).
 
 | # | Vector de ataque | Intento | Resultado |
@@ -125,6 +132,7 @@ del contrato).
 | 8 | **Control de acceso** | Un no-owner llama a `notify`/`recover` | ❌ Revierte — `onlyOwner` |
 | 9 | **Stake desproporcionado** | Stake de 1 wei captura valor excedente | ❌ Bloqueado — el acumulador global reward-per-token es justo |
 | 10 | **Robo de recompensas** | Un atacante reclama las recompensas de una víctima | ❌ Bloqueado — las recompensas están aisladas por usuario |
+| 11 | **Early-exit explotado** | Flash-stake + `exitEarly()` inmediato en el mismo bloque | ❌ Bloqueado — el early exit paga la penalidad del 15% al pool; el atacante pierde valor en vez de capturarlo |
 
 **Hallazgos:** no se encontró ninguna vulnerabilidad explotable para un
 atacante externo. Los dos riesgos de owner documentados en la revisión
@@ -146,17 +154,42 @@ actuara mal y ninguno permitía que un tercero robara fondos.
 - **Notify hardening** — revert con `RewardPeriodTooSmall` por debajo de
   `REWARDS_DURATION`; el cap de recompensas excluye el principal stakeado
   (`balance - totalStaked`).
+- **Early exit con penalidad** — `exitEarly()` durante el lockup descuenta el
+  15% al pool; el saldo neto sale vía `SafeERC20` y la penalidad refuerza las
+  recompensas de los que esperan (diseño D7).
 
 ---
 
 ## 5. Desplegado en Sepolia — en vivo y verificado
 
-### v2 (actual) — endurecido + gobernanza con timelock
+### v3 (actual) — early exit + gobernanza con timelock
 
-La **v2** es el contrato activo: código endurecido (fix de `notifyRewardAmount`,
-commit `ad1203f`) gobernado por un `TimelockController` — toda acción de owner
-(notify/recover) requiere schedule → esperar 2 días → execute. El owner ya no
-puede actuar al instante.
+La **v3** es el contrato activo: agrega `exitEarly()` (salida anticipada con
+penalidad del 15% durante el lockup) sobre el código endurecido (fix de
+`notifyRewardAmount`, commit `ad1203f`), gobernado por el mismo
+`TimelockController` — toda acción de owner (notify/recover) requiere
+schedule → esperar 2 días → execute. El owner ya no puede actuar al instante.
+
+| Contrato | Dirección (Sepolia) | Explorer |
+|---|---|---|
+| `StakingRewards` v3 | `0x5dd9d0B3189f0477392f0bA4B164823d5d030A65` | [etherscan](https://sepolia.etherscan.io/address/0x5dd9d0B3189f0477392f0bA4B164823d5d030A65) |
+| `TimelockController` | `0x018efb5099505113625dabc5dc6f5513ad252c6b` | [etherscan](https://sepolia.etherscan.io/address/0x018efb5099505113625dabc5dc6f5513ad252c6b) |
+| `StakingToken` (reusado) | `0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5` | [etherscan](https://sepolia.etherscan.io/address/0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5) |
+
+Run de deploy v3 (2026-08-04, `forge script script/DeployV3.s.sol --broadcast --verify`):
+
+- **Deployer:** `0x6f81b75EDc0C7060aa5F1bA14B7fd45bD663A5bD`
+- **Staking v3 deploy tx:** ver broadcast/DeployV3.s.sol/11155111/run-latest.json
+- **Timelock + Token reusados** de la v2 (no se re-desplegaron)
+- **Pool financiado + período 1 iniciado + ownership transferido al timelock**
+- **minDelay:** 172,800 s (2 días) · **PENALTY_BPS:** 1,500 (15%)
+
+### v2 (legacy) — endurecido + gobernanza con timelock
+
+La **v2** fue la primera versión endurecida (fix de `notifyRewardAmount`,
+commit `ad1203f`) con gobernanza por timelock. Quedó reemplazada por la v3
+(early exit); sigue pagando rewards hasta su `periodFinish` y ningún stake
+nuevo usa este contrato.
 
 | Contrato | Dirección (Sepolia) | Explorer |
 |---|---|---|
@@ -164,36 +197,18 @@ puede actuar al instante.
 | `TimelockController` | `0x018efb5099505113625dabc5dc6f5513ad252c6b` | [etherscan](https://sepolia.etherscan.io/address/0x018efb5099505113625dabc5dc6f5513ad252c6b) |
 | `StakingToken` (reusado) | `0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5` | [etherscan](https://sepolia.etherscan.io/address/0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5) |
 
-Run de deploy v2 (2026-08-04, `forge script script/DeployV2.s.sol --broadcast --verify`):
-
-- **Deployer:** `0x6f81b75EDc0C7060aa5F1bA14B7fd45bD663A5bD`
-- **Staking v2 deploy tx:** `0x43112aa4a41fff3ab9ba15ac22e6abdfc8be4892f42d8c1ff508c579535ff833`
-- **Timelock deploy tx:** `0x0cfde46c9e58129d7677cc95b31bce5766f9abf9bc6f560819e5c9c78ba6b00b`
-- **Pool financiado + período 1 iniciado + ownership transferido al timelock**
-- **minDelay:** 172,800 s (2 días)
-
-### v1 (legacy) — original desplegado y verificado
-
-La **v1** fue la primera versión en producción (código pre-hardening). Sigue
-pagando rewards hasta su `periodFinish`; el stake existente se migra cuando
-vence su lockup (2026-09-03).
-
-| Contrato | Dirección (Sepolia) | Explorer |
-|---|---|---|
-| `StakingRewards` v1 | `0x42A3cFFDAE52Ed302Bb78D14071B386F85EFCfCc` | [etherscan](https://sepolia.etherscan.io/address/0x42A3cFFDAE52Ed302Bb78D14071B386F85EFCfCc) |
-| `StakingToken` | `0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5` | [etherscan](https://sepolia.etherscan.io/address/0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5) |
-
 Deploy original (2026-08-04, `forge script --broadcast --verify`):
 
 - **Token deploy tx:** `0x78ecc3e6707138264f5d41a8a1feff8280e6652c90d242b075852e1be5f67f0d`
 - **Staking deploy tx:** `0x553f1e444c6c307091258ca7812a33bf14592ea1ddacc7d803d7dfe6e0f7585f`
 
-### Estado on-chain en vivo (v2)
+### Estado on-chain en vivo (v3)
 
-- `totalSupply` 10,000,000 STK → 9,000,000 deployer / 1,000,000 reward pool
+- `totalSupply` 10,000,000 STK → ~9,000,000 deployer / 1,000,000 reward pool
 - `rewardRate` 128,600,823,045,267,488 ≈ 1e24 / 7,776,000 s
-- `periodFinish` = deploy v2 + 90 días (2026-11-02)
+- `periodFinish` = deploy v3 + 90 días (2026-11-02)
 - `owner` = TimelockController (2 días de delay en toda acción de owner)
+- `PENALTY_BPS` = 1,500 (15%)
 
 ### Prueba on-chain real (v1)
 
@@ -212,8 +227,8 @@ conectada a los contratos en vivo de Sepolia con **wagmi + viem** (wallet
 inyectada de MetaMask). Las secciones hero + mission explican *por qué* existe
 el protocolo; el panel de la app ofrece conexión de wallet, stats del
 protocolo, tu posición (auto-refresh), stake (approve + stake), claim de
-recompensas, withdraw y exit atómico — con links a Etherscan en cada
-transacción y manejo amigable de errores.
+recompensas, withdraw, exit atómico y early exit con penalidad — con links a
+Etherscan en cada transacción y manejo amigable de errores.
 
 ```shell
 cd frontend
@@ -230,7 +245,7 @@ No hay private keys en el frontend — todo el signing ocurre en MetaMask.
 ```shell
 # Contratos + tests (Foundry)
 forge build
-forge test                    # 58 tests
+forge test                    # 67 tests
 forge fmt --check
 
 # Cadena local
@@ -245,6 +260,12 @@ PRIVATE_KEY=0xac09...f2ff80 \
   forge script script/DeployV2.s.sol \
   --rpc-url http://127.0.0.1:8545 --broadcast
 
+# v3 (early exit): reusa el token y el timelock
+TOKEN_ADDRESS=0x... TIMELOCK_ADDRESS=0x... \
+PRIVATE_KEY=0xac09...f2ff80 \
+  forge script script/DeployV3.s.sol \
+  --rpc-url http://127.0.0.1:8545 --broadcast
+
 # dApp (frontend/)
 cd frontend && npm install && npm run dev
 ```
@@ -256,13 +277,17 @@ cd frontend && npm install && npm run dev
 - **Registro de cambios dirigido por specs** — `openspec/changes/archive/2026-08-03-staking-protocol/`
   (proposal → specs → design → tasks → verify), mostrando el rastro completo
   de requerimientos a verificación.
-- **Suite de ataques** — `test/SecurityAttack.t.sol` (10 PoCs adversariales).
+- **Suite de ataques** — `test/SecurityAttack.t.sol` (11 PoCs adversariales).
 - **Gobernanza** — `test/Timelock.t.sol` (8 tests de integración con el timelock).
+- **Early exit** — `test/EarlyExit.t.sol` (8 tests de penalidad y seguridad).
 - **Invariantes** — `test/invariants/` (5 reglas de verdad financiera).
-- **Registro de deploy** — `broadcast/Deploy.s.sol/11155111/` (v1) y `broadcast/DeployV2.s.sol/11155111/` (v2).
+- **Registro de deploy** — `broadcast/Deploy.s.sol/11155111/` (v1), `broadcast/DeployV2.s.sol/11155111/` (v2) y `broadcast/DeployV3.s.sol/11155111/` (v3).
 
 ## Fuera de alcance (v1)
 
 Vesting/penalties, emisiones mintables, recompensas multi-token, shares
-ERC-4626, permit, upgradeability, timelock, deploy en mainnet, indexación con
+ERC-4626, permit, upgradeability, deploy en mainnet, indexación con
 subgraph.
+
+> Nota: "Fuera de alcance (v1)" queda como registro histórico — la penalidad
+> por early exit ya está implementada en la v3.

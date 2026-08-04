@@ -37,6 +37,7 @@ export function WithdrawCard() {
   const [amount, setAmount] = useState('')
   const [withdrawHash, setWithdrawHash] = useState<Hex>()
   const [exitHash, setExitHash] = useState<Hex>()
+  const [earlyExitHash, setEarlyExitHash] = useState<Hex>()
   const [error, setError] = useState<string>()
 
   const amountWei = useMemo(() => parseAmount(amount), [amount])
@@ -84,19 +85,39 @@ export function WithdrawCard() {
     query: { enabled: isConnected && hasStake && !inLockup },
   })
 
+  const earlyExitSimulate = useSimulateContract({
+    abi: STAKING_REWARDS_ABI,
+    address: STAKING_REWARDS_ADDRESS,
+    functionName: 'exitEarly',
+    query: { enabled: isConnected && hasStake && inLockup },
+  })
+
+  const penaltyBps = useReadContract({
+    abi: STAKING_REWARDS_ABI,
+    address: STAKING_REWARDS_ADDRESS,
+    functionName: 'PENALTY_BPS',
+    query: { enabled: isConnected },
+  })
+
   const withdrawReceipt = useWaitForTransactionReceipt({ hash: withdrawHash })
   const exitReceipt = useWaitForTransactionReceipt({ hash: exitHash })
+  const earlyExitReceipt = useWaitForTransactionReceipt({ hash: earlyExitHash })
 
   useEffect(() => {
-    if (withdrawReceipt.status === 'success' || exitReceipt.status === 'success') {
+    if (
+      withdrawReceipt.status === 'success' ||
+      exitReceipt.status === 'success' ||
+      earlyExitReceipt.status === 'success'
+    ) {
       queryClient.invalidateQueries()
       const id = setTimeout(() => {
         setWithdrawHash(undefined)
         setExitHash(undefined)
+        setEarlyExitHash(undefined)
       }, 8000)
       return () => clearTimeout(id)
     }
-  }, [withdrawReceipt.status, exitReceipt.status, queryClient])
+  }, [withdrawReceipt.status, exitReceipt.status, earlyExitReceipt.status, queryClient])
 
   function handleMax() {
     if (stakedValue !== undefined) setAmount(formatUnits(stakedValue, TOKEN_DECIMALS))
@@ -134,7 +155,24 @@ export function WithdrawCard() {
     }
   }
 
-  const pending = Boolean(withdrawHash) || Boolean(exitHash)
+  async function handleEarlyExit() {
+    if (!address) return
+    setError(undefined)
+    try {
+      const hash = await writeContractAsync({
+        abi: STAKING_REWARDS_ABI,
+        address: STAKING_REWARDS_ADDRESS,
+        functionName: 'exitEarly',
+      })
+      setEarlyExitHash(hash)
+    } catch (err) {
+      setError(getErrorMessage(err))
+    }
+  }
+
+  const pending = Boolean(withdrawHash) || Boolean(exitHash) || Boolean(earlyExitHash)
+
+  const penaltyPct = penaltyBps.data !== undefined ? Number(penaltyBps.data) / 100 : 15
 
   return (
     <section className="card">
@@ -179,6 +217,28 @@ export function WithdrawCard() {
 
       {withdrawSimulate.error && <p className="form-error">{getErrorMessage(withdrawSimulate.error)}</p>}
 
+      {inLockup && hasStake && (
+        <>
+          <div className="divider" />
+
+          <h3 className="card-subtitle">Early Exit (penalty)</h3>
+          <p className="claim-amount">
+            Withdraw everything now while locked — a {penaltyPct}% penalty is withheld from your
+            principal and stays in the pool for remaining stakers. Rewards stay claimable separately.
+          </p>
+          <button
+            className="btn btn-danger btn-block"
+            onClick={handleEarlyExit}
+            disabled={!isConnected || !hasStake || !inLockup || pending}
+          >
+            {!isConnected ? 'Connect Wallet' : `Early Exit (−${penaltyPct}%)`}
+          </button>
+          {earlyExitSimulate.error && (
+            <p className="form-error">{getErrorMessage(earlyExitSimulate.error)}</p>
+          )}
+        </>
+      )}
+
       <div className="divider" />
 
       <h3 className="card-subtitle">Close Position</h3>
@@ -194,6 +254,10 @@ export function WithdrawCard() {
       {error && <p className="form-error">{error}</p>}
       <TxStatus hash={withdrawHash} receipt={withdrawReceipt.isSuccess ? withdrawReceipt.data : undefined} />
       <TxStatus hash={exitHash} receipt={exitReceipt.isSuccess ? exitReceipt.data : undefined} />
+      <TxStatus
+        hash={earlyExitHash}
+        receipt={earlyExitReceipt.isSuccess ? earlyExitReceipt.data : undefined}
+      />
     </section>
   )
 }
