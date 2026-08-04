@@ -55,6 +55,7 @@ contract StakingRewards is Ownable, ReentrancyGuard {
     error LockupNotEnded();
     error InsufficientStakedBalance();
     error CannotRecoverStakingToken();
+    error RewardPeriodTooSmall();
 
     constructor(address stakingToken_, address initialOwner) Ownable(initialOwner) {
         if (stakingToken_ == address(0)) revert ZeroAddress();
@@ -133,14 +134,20 @@ contract StakingRewards is Ownable, ReentrancyGuard {
     /// @notice Fund a new 90-day emission period (owner only).
     /// @dev Synthetix top-up: any undistributed remainder of the current period is
     ///      carried over, and the total is capped at the contract's STK balance
-    ///      (design D1). updateReward(address(0)) checkpoints global state first.
+    ///      EXCLUDING staked principal — staked principal is user liability and
+    ///      must never be committed as rewards (design D6). Reverts if the funded
+    ///      amount is below REWARDS_DURATION so a period can never silently fund
+    ///      zero rewards. updateReward(address(0)) checkpoints global state first.
     function notifyRewardAmount(uint256 reward) external onlyOwner updateReward(address(0)) {
         uint256 leftover = block.timestamp < periodFinish ? (periodFinish - block.timestamp) * rewardRate : 0;
         uint256 funded = reward + leftover;
         uint256 balance = STAKING_TOKEN.balanceOf(address(this));
-        if (funded > balance) {
-            funded = balance;
+        // Cap at the surplus over staked principal: the pool, never user principal.
+        uint256 available = balance > totalStaked ? balance - totalStaked : 0;
+        if (funded > available) {
+            funded = available;
         }
+        if (funded < REWARDS_DURATION) revert RewardPeriodTooSmall();
         rewardRate = funded / REWARDS_DURATION;
         lastUpdateTime = block.timestamp;
         periodFinish = block.timestamp + REWARDS_DURATION;

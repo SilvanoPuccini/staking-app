@@ -108,8 +108,10 @@ contract Handler is Test {
     /// @dev Owner pushes `amount` into the reward pool and starts a new period.
     function notify(uint256 seed) external {
         uint256 stash = token.balanceOf(address(this));
-        if (stash == 0) return;
-        uint256 amount = bound(seed, 1, stash);
+        if (stash < REWARDS_DURATION) return;
+        // notifyRewardAmount reverts RewardPeriodTooSmall below REWARDS_DURATION
+        // (hardened contract), so the handler only issues valid periods.
+        uint256 amount = bound(seed, REWARDS_DURATION, stash);
 
         // Undistributed remainder of the current period — emission already
         // committed, so it must NOT be counted again for the new period.

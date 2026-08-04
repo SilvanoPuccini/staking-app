@@ -150,45 +150,35 @@ contract SecurityAttackTest is Test {
     }
 
     // =====================================================================
-    // ATTACK 5: Reward-rate truncation / silent reward kill — owner notifies
-    // with an amount smaller than REWARDS_DURATION base units; the integer
-    // division floors rewardRate to 0 and the 90-day period funds nothing.
-    // This is a KNOWN CAVEAT (documented). An attacker cannot trigger it
-    // (onlyOwner), but we lock the behavior in a test so a future change
-    // cannot silently reintroduce it.
+    // ATTACK 5: Silent reward kill — owner notifies with an amount smaller
+    // than REWARDS_DURATION; the integer division would floor rewardRate to 0
+    // and the 90-day period would fund nothing silently.
+    // FIXED (design D6): notifyRewardAmount now reverts RewardPeriodTooSmall
+    // instead of silently funding a zero-rate period.
     // =====================================================================
-    function testAttack5_UnderfundedNotifyProducesZeroRate() public {
+    function testAttack5_UnderfundedNotifyReverts() public {
         _fundAndNotify(FUND);
         vm.warp(block.timestamp + REWARDS_DURATION); // period over
 
         // Owner tops up with an amount below REWARDS_DURATION base units.
         uint256 dust = 1_000_000; // 1e-12 STK — under 7,776,000 threshold
         token.transfer(address(sr), dust);
+
+        vm.expectRevert(StakingRewards.RewardPeriodTooSmall.selector);
         sr.notifyRewardAmount(dust);
 
-        assertEq(sr.rewardRate(), 0, "dust notify should floor to zero (documented caveat)");
-        // Documented: the period silently funds nothing until re-notify.
+        // The period was NOT silently killed: state unchanged.
+        assertGt(sr.rewardRate(), 0, "period was silently killed");
     }
 
     // =====================================================================
-    // ATTACK 6: Principal canibalization — notifyRewardAmount caps `funded`
-    // at balanceOf(this), which INCLUDES staked principal. A careless owner
-    // could notify an amount larger than the actual reward surplus; the cap
-    // would then commit staked principal as rewards, threatening solvency.
-    // Expected: the cap prevents over-commit beyond the full balance, but the
-    // committed rewards can exceed the *reward surplus*. We assert the exact
-    // semantics so the risk stays visible.
+    // ATTACK 6: Principal canibalization — notifyRewardAmount used to cap
+    // `funded` at balanceOf(this), which INCLUDES staked principal. A careless
+    // owner could commit staked principal as rewards, threatening solvency.
+    // FIXED (design D6): the cap now uses balance - totalStaked (surplus over
+    // principal), so staked principal can never be committed as rewards.
     // =====================================================================
-    // =====================================================================
-    // ATTACK 6: Principal canibalization — notifyRewardAmount caps `funded`
-    // at balanceOf(this), which INCLUDES staked principal. A careless owner
-    // could notify an amount larger than the actual reward surplus; the cap
-    // would then commit staked principal as rewards, threatening solvency.
-    // Expected: the protocol caps at the full balance — meaning the owner CAN
-    // over-commit principal as rewards. This is a documented owner-risk
-    // (admin error, not an external exploit). We assert the exact semantics.
-    // =====================================================================
-    function testAttack6_NotifyCapUsesFullBalanceIncludingPrincipal() public {
+    function testAttack6_NotifyCannotCanibalizePrincipal() public {
         // Alice stakes most of the pool's funding as principal BEFORE rewards
         // are even notified: her principal + future pool are mixed in balance.
         _stakeAs(alice, 900_000 ether);
@@ -197,17 +187,19 @@ contract SecurityAttackTest is Test {
         vm.warp(block.timestamp + REWARDS_DURATION); // period over
 
         uint256 balance = token.balanceOf(address(sr));
-        // At period end: balance = 100k leftover pool + 900k staked principal.
-        assertGe(sr.totalStaked(), balance * 80 / 100, "setup did not trap principal");
+        uint256 principal = sr.totalStaked();
+        uint256 surplus = balance - principal;
+        // At period end: balance = leftover pool + staked principal.
+        assertGt(principal, 0, "setup: no principal staked");
 
         // Careless owner notifies the ENTIRE balance (which includes principal).
         sr.notifyRewardAmount(balance);
-        assertLe(sr.rewardRate() * REWARDS_DURATION, balance, "rate committed more than balance");
-        // NOTE: the cap protects against over-committing beyond the balance,
-        // but the owner CAN commit principal-backed funds as rewards. Solvency
-        // is preserved because rewards are never minted — they come from the
-        // same balance. The risk is reduced future principal availability,
-        // an admin-side concern, not an external attack.
+
+        // FIXED: committed emission is capped at the surplus, not the balance.
+        assertLe(sr.rewardRate() * REWARDS_DURATION, surplus, "staked principal committed as rewards");
+        assertLt(
+            sr.rewardRate() * REWARDS_DURATION, balance, "principal canibalized - cap did not exclude staked principal"
+        );
     }
 
     // =====================================================================
