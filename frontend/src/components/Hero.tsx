@@ -1,4 +1,4 @@
-const CONTRACTS_URL = 'https://sepolia.etherscan.io/address/0x42A3cFFDAE52Ed302Bb78D14071B386F85EFCfCc'
+const CONTRACTS_URL = 'https://sepolia.etherscan.io/address/0x1190ae86140b92118f9cb84061a8bfc19bbca781'
 
 export function Hero() {
   return (

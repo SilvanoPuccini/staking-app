@@ -6,7 +6,7 @@ import stakingTokenAbiJson from './abi/StakingToken.json'
 import stakingRewardsAbiJson from './abi/StakingRewards.json'
 
 export const STAKING_TOKEN_ADDRESS = '0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5' as const
-export const STAKING_REWARDS_ADDRESS = '0x42A3cFFDAE52Ed302Bb78D14071B386F85EFCfCc' as const
+export const STAKING_REWARDS_ADDRESS = '0x1190ae86140b92118f9cb84061a8bfc19bbca781' as const
 
 export const TOKEN_DECIMALS = 18
 export const CHAIN_ID = sepolia.id

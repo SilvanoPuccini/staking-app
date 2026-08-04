@@ -75,18 +75,19 @@ StakingRewards (Ownable, ReentrancyGuard, SafeERC20)
 
 ---
 
-## 3. How it was tested — 50 tests, 4 layers
+## 3. How it was tested — 58 tests, 5 layers
 
 | Layer | Count | What it proves |
 |---|---|---|
 | Unit (token) | 8 | metadata, fixed supply, no mint, transfers/allowances + reverts |
 | Unit (staking) | 27 | stake/lockup, linear accrual, claim, withdraw boundary, atomic exit, notify rate/cap/owner, recoverERC20 exclusions, reentrancy, lockup extension + fuzz-style round-trip and claim-idempotence cases |
+| Governance | 8 | owner = timelock, direct owner calls blocked, schedule/wait/execute flow, attacker cannot schedule/execute, recoverERC20 timelocked, hardened fix survives the timelock |
 | Invariant | 5 | solvency, accounting conservation, monotonic principal, lockup integrity, rewards bounded |
 | **Security attacks** | **10** | **adversarial PoCs trying to corrupt the protocol (see §4)** |
 
 ```shell
 forge build                 # compile
-forge test                  # full suite: 50 tests
+forge test                  # full suite: 58 tests
 forge fmt --check           # formatting gate
 forge coverage              # ~99% lines on src/
 ```
@@ -143,38 +144,57 @@ party steal funds.
 
 ## 5. Deployed on Sepolia — live and verified
 
-Both contracts are **deployed and verified on Etherscan** (chain id 11155111):
+### v2 (current) — hardened + timelock governance
+
+The **v2** is the active contract: hardened code (`notifyRewardAmount` fix,
+commit `ad1203f`) governed by a `TimelockController` — every owner action
+(notify/recover) requires schedule → wait 2 days → execute. The owner can no
+longer act instantly.
 
 | Contract | Address (Sepolia) | Explorer |
 |---|---|---|
-| `StakingToken` | `0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5` | [etherscan](https://sepolia.etherscan.io/address/0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5) |
-| `StakingRewards` | `0x42A3cFFDAE52Ed302Bb78D14071B386F85EFCfCc` | [etherscan](https://sepolia.etherscan.io/address/0x42A3cFFDAE52Ed302Bb78D14071B386F85EFCfCc) |
+| `StakingRewards` v2 | `0x1190ae86140b92118f9cb84061a8bfc19bbca781` | [etherscan](https://sepolia.etherscan.io/address/0x1190ae86140b92118f9cb84061a8bfc19bbca781) |
+| `TimelockController` | `0x018efb5099505113625dabc5dc6f5513ad252c6b` | [etherscan](https://sepolia.etherscan.io/address/0x018efb5099505113625dabc5dc6f5513ad252c6b) |
+| `StakingToken` (reused) | `0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5` | [etherscan](https://sepolia.etherscan.io/address/0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5) |
 
-Deployment run (2026-08-04, `forge script --broadcast --verify`):
+v2 deployment run (2026-08-04, `forge script script/DeployV2.s.sol --broadcast --verify`):
 
 - **Deployer:** `0x6f81b75EDc0C7060aa5F1bA14B7fd45bD663A5bD`
+- **Staking v2 deploy tx:** `0x43112aa4a41fff3ab9ba15ac22e6abdfc8be4892f42d8c1ff508c579535ff833`
+- **Timelock deploy tx:** `0x0cfde46c9e58129d7677cc95b31bce5766f9abf9bc6f560819e5c9c78ba6b00b`
+- **Pool funded + period 1 started + ownership handed to the timelock**
+- **minDelay:** 172,800 s (2 days)
+
+### v1 (legacy) — original deployed and verified
+
+The **v1** was the first production version (pre-hardening code). It keeps
+paying rewards until its `periodFinish`; the existing stake migrates when its
+lockup expires (2026-09-03).
+
+| Contract | Address (Sepolia) | Explorer |
+|---|---|---|
+| `StakingRewards` v1 | `0x42A3cFFDAE52Ed302Bb78D14071B386F85EFCfCc` | [etherscan](https://sepolia.etherscan.io/address/0x42A3cFFDAE52Ed302Bb78D14071B386F85EFCfCc) |
+| `StakingToken` | `0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5` | [etherscan](https://sepolia.etherscan.io/address/0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5) |
+
+Original deployment (2026-08-04, `forge script --broadcast --verify`):
+
 - **Token deploy tx:** `0x78ecc3e6707138264f5d41a8a1feff8280e6652c90d242b075852e1be5f67f0d`
 - **Staking deploy tx:** `0x553f1e444c6c307091258ca7812a33bf14592ea1ddacc7d803d7dfe6e0f7585f`
-- **Reward pool funded + first 90-day period started** (`notifyRewardAmount(1e24)`)
 
-### Live on-chain state
+### Live on-chain state (v2)
 
 - `totalSupply` 10,000,000 STK → 9,000,000 deployer / 1,000,000 reward pool
-- `rewardRate` 128,600,823,045,267,489 ≈ 1e24 / 7,776,000 s
-- `periodFinish` = deploy + 90 days
+- `rewardRate` 128,600,823,045,267,488 ≈ 1e24 / 7,776,000 s
+- `periodFinish` = v2 deploy + 90 days (2026-11-02)
+- `owner` = TimelockController (2-day delay on every owner action)
 
-### Real on-chain proof
+### Real on-chain proof (v1)
 
 The protocol was exercised with a **real transaction on Sepolia**:
 
 - ✅ Staked 1,000 STK (tx `0xfd1b9b19f2578fbfe0f86e3a08cf254c47290bb6e44106ba7a383973078f53e3` — `Staked` event)
 - ✅ Rewards accrued live (`earned()` grew per second)
 - ✅ Claimed **467.59 STK** via the frontend dApp — verified on-chain (deployer balance +467.59 STK, pool −467.59 STK)
-
-Note on hardening: the code deployed and verified on Sepolia reflects the
-pre-`ad1203f` version (hardening happened after deployment). The fixed code
-lives in this repo at commit `ad1203f` and is covered by the updated test
-suite (attacks 5 and 6 as ❌ Fixed).
 
 ---
 
@@ -202,13 +222,19 @@ No private keys in the frontend — all signing happens in MetaMask.
 ```shell
 # Contracts + tests (Foundry)
 forge build
-forge test                    # 50 tests
+forge test                    # 58 tests
 forge fmt --check
 
 # Local chain
 anvil &
 PRIVATE_KEY=0xac09...f2ff80 \   # anvil account #0
   forge script script/Deploy.s.sol \
+  --rpc-url http://127.0.0.1:8545 --broadcast
+
+# v2 (hardened + timelock): reuse the token if present, or deploy a new one
+TOKEN_ADDRESS=0x... \
+PRIVATE_KEY=0xac09...f2ff80 \
+  forge script script/DeployV2.s.sol \
   --rpc-url http://127.0.0.1:8545 --broadcast
 
 # dApp (frontend/)
@@ -223,8 +249,9 @@ cd frontend && npm install && npm run dev
   (proposal → specs → design → tasks → verify), showing the full
   requirements-to-verification trail.
 - **Attack suite** — `test/SecurityAttack.t.sol` (10 adversarial PoCs).
+- **Governance** — `test/Timelock.t.sol` (8 timelock integration tests).
 - **Invariants** — `test/invariants/` (5 financial-truth rules).
-- **Deploy record** — `broadcast/Deploy.s.sol/11155111/` (4 on-chain txs).
+- **Deploy record** — `broadcast/Deploy.s.sol/11155111/` (v1) and `broadcast/DeployV2.s.sol/11155111/` (v2).
 
 ## Out of scope (v1)
 
