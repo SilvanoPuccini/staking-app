@@ -1,0 +1,40 @@
+# openspec/config.yaml — staking-app SDD configuration
+# Initialized: 2026-08-03
+# Persistence mode: hybrid (openspec + engram)
+
+schema: spec-driven
+
+context: |
+  Project: staking-app — Staking App with its own ERC-20 token (StakingToken).
+  Curriculum: Blockchain Accelerator 2026 — blocks 3 (ERC-20), 7 (Staking), 6 (Foundry testing), 13 (security).
+  Stack: EVM/Solidity + Foundry (planned). Repo was EMPTY at init time — no scaffolding yet.
+  Toolchain: Foundry 1.5.1 installed and on PATH (forge/cast/anvil/chisel in ~/.foundry/bin). solc 0.8.36 available via conda. Node v22.18.0 available.
+  Testing: Foundry available — forge test viable; Strict TDD usable once scaffolding exists.
+  Architecture: minimal staking protocol — StakingToken (ERC-20) + staking contract (deposit/withdraw/rewards).
+  Style: Solidity conventions, Foundry forge tests, conventional commits, no AI attribution.
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Keep scope real and completable (portfolio project)
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    guidelines:
+      - Follow existing code patterns
+      - Scaffold Foundry project before contract work
+    tdd: true                # Foundry installed — strict TDD usable once scaffolding exists
+    test_command: "forge test"
+  verify:
+    test_command: "forge test"
+    build_command: "forge build"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas

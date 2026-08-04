@@ -12,7 +12,7 @@ Built with Foundry, following the Blockchain Accelerator curriculum:
 
 ```shell
 forge build          # compile (solc 0.8.36, optimizer 200)
-forge test           # 37 tests: 8 token unit + 24 staking (unit/fuzz) + 5 invariants
+forge test           # 40 tests: 8 token unit + 27 staking (24 unit + 3 fuzz) + 5 invariants
 forge fmt --check    # formatting gate
 
 # Local deploy on anvil (task 3.4):
@@ -117,7 +117,7 @@ invariant ghost tracks (see `test/invariants/Handler.sol` `notify`).
 | Layer | Count | What it proves |
 |---|---|---|
 | Unit (token) | 8 | metadata, fixed supply, no mint, transfers/allowances + reverts |
-| Unit (staking) | 21 | stake/lockup, linear accrual, claim (incl. in-lockup, no double), withdraw boundary, atomic exit, notify rate/cap/owner, recoverERC20 exclusions, reentrancy, D3 lockup extension, defensive reverts |
+| Unit (staking) | 24 | stake/lockup, linear accrual, claim (incl. in-lockup, no double), withdraw boundary, atomic exit, notify rate/cap/owner, recoverERC20 exclusions, reentrancy, D3 lockup extension, defensive reverts |
 | Fuzz | 3 | round-trip, accrued ≤ funded pool, claim idempotence (@2000 runs verified) |
 | Invariant | 5 | solvency, accounting conservation, monotonic principal, lockup, rewards-bounded |
 
