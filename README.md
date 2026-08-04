@@ -155,6 +155,24 @@ forge test --match-contract StakingRewardsInvariants   # invariants only
 forge coverage             # ~99% lines on src/
 ```
 
+## Frontend dApp
+
+React + Vite + TypeScript app in [`frontend/`](frontend/) wired to the live
+Sepolia contracts with **wagmi + viem** (MetaMask injected wallet).
+
+```shell
+cd frontend
+npm install
+npm run dev        # http://localhost:5173
+```
+
+Features: connect wallet (auto switch to Sepolia), protocol overview
+(supply, reward rate, period countdown, lockup), your position (balance,
+staked, earned auto-refresh), stake (approve + stake in one flow), claim
+rewards, withdraw and atomic exit — with Etherscan links on every tx and
+friendly revert/cancel errors. No private keys in the frontend: all
+signing happens in MetaMask.
+
 ## Rollback / reset
 
 Greenfield: reset the anvil chain (`pkill anvil`) and redeploy — no migrations,
@@ -165,5 +183,5 @@ upgrades are out of scope.
 
 ## Out of scope (v1)
 
-Frontend dApp, vesting/penalties, mintable emissions, multi-token rewards,
-ERC-4626 shares, permit, upgradeability, timelock, mainnet deploy.
+Vesting/penalties, mintable emissions, multi-token rewards, ERC-4626 shares,
+permit, upgradeability, timelock, mainnet deploy, subgraph indexing.
