@@ -1,16 +1,24 @@
 # openspec/config.yaml — staking-app SDD configuration
 # Initialized: 2026-08-03
 # Persistence mode: hybrid (openspec + engram)
+# Updated: 2026-08-04 — Sepolia deployment recorded
 
 schema: spec-driven
 
 context: |
   Project: staking-app — Staking App with its own ERC-20 token (StakingToken).
   Curriculum: Blockchain Accelerator 2026 — blocks 3 (ERC-20), 7 (Staking), 6 (Foundry testing), 13 (security).
-  Stack: EVM/Solidity + Foundry (planned). Repo was EMPTY at init time — no scaffolding yet.
-  Toolchain: Foundry 1.5.1 installed and on PATH (forge/cast/anvil/chisel in ~/.foundry/bin). solc 0.8.36 available via conda. Node v22.18.0 available.
-  Testing: Foundry available — forge test viable; Strict TDD usable once scaffolding exists.
-  Architecture: minimal staking protocol — StakingToken (ERC-20) + staking contract (deposit/withdraw/rewards).
+  Stack: EVM/Solidity + Foundry. Initial SDD cycle COMPLETE (19/19 tasks, verify PASS 40/40) and ARCHIVED (openspec/changes/archive/2026-08-03-staking-protocol/).
+  Toolchain: Foundry (forge/cast/anvil/chisel). solc 0.8.36. Node v22.18.0.
+  Testing: forge test — 40 tests (8 token unit + 24 staking unit + 3 fuzz + 5 invariants), coverage ~98% lines.
+  Deployment: LIVE on Ethereum Sepolia (chain 11155111), contracts verified on Etherscan:
+    StakingToken  = 0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5
+    StakingRewards = 0x42A3cFFDAE52Ed302Bb78D14071B386F85EFCfCc
+    Deployer = 0x6f81b75EDc0C7060aa5F1bA14B7fd45bD663A5bD
+    Funded 1,000,000 STK reward pool; rewardRate = 128600823045267489 (~1e24/90d); periodFinish = deploy + 90d.
+    Broadcast logs tracked at broadcast/Deploy.s.sol/11155111/.
+  Next: README addresses done; remaining ideas — GitHub push (gh CLI not installed), smoke-test stake via cast, dApp frontend with wallet, demo video.
+  Architecture: minimal staking protocol — StakingToken (ERC-20, fixed 10M supply) + StakingRewards (Synthetix-style, 30d lockup, 90d reward windows, STK-backed pool).
   Style: Solidity conventions, Foundry forge tests, conventional commits, no AI attribution.
 
 rules:
