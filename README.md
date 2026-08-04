@@ -8,6 +8,9 @@ Built with Foundry, following the Blockchain Accelerator curriculum:
 **block 3** (ERC-20), **block 7** (staking app), **block 6** (Foundry testing),
 **block 13** (smart-contract security).
 
+**Live on Ethereum Sepolia testnet** — contracts deployed and verified on
+Etherscan; see [Deployed on Sepolia](#deployed-on-sepolia).
+
 ## Quick path
 
 ```shell
@@ -32,6 +35,31 @@ After the local deploy the contracts live at the deterministic addresses below
 
 > These addresses only hold on a brand-new anvil instance (chain id 31337).
 > Reset anvil or redeploy and re-read the script logs for your run.
+
+## Deployed on Sepolia
+
+Live deployment (chain id 11155111) with both contracts verified on Etherscan:
+
+| Contract | Address (Sepolia) | Explorer |
+|---|---|---|
+| `StakingToken` | `0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5` | [etherscan](https://sepolia.etherscan.io/address/0xb8EaDA40EccA1c4E71Ed80F6C09A7C063f790dc5) |
+| `StakingRewards` | `0x42A3cFFDAE52Ed302Bb78D14071B386F85EFCfCc` | [etherscan](https://sepolia.etherscan.io/address/0x42A3cFFDAE52Ed302Bb78D14071B386F85EFCfCc) |
+
+Deployment run (2026-08-04, `forge script --broadcast --verify`):
+
+- **Deployer:** `0x6f81b75EDc0C7060aa5F1bA14B7fd45bD663A5bD`
+- **Token deploy tx:** `0x78ecc3e6707138264f5d41a8a1feff8280e6652c90d242b075852e1be5f67f0d`
+- **Staking deploy tx:** `0x553f1e444c6c307091258ca7812a33bf14592ea1ddacc7d803d7dfe6e0f7585f`
+- **Reward pool funded + first 90-day period started** (`notifyRewardAmount(1e24)`)
+
+On-chain state at deploy:
+
+- `totalSupply` 10,000,000 STK → 9,000,000 deployer / 1,000,000 reward pool
+- `rewardRate` 128,600,823,045,267,489 ≈ 1e24 / 7,776,000 s
+- `periodFinish` = deploy + 90 days; `totalStaked` 0 (no stakers yet)
+
+Interact (read): `cast call 0x42A3... "rewardRate()(uint256)" --rpc-url sepolia`
+Interact (write, owner): `cast send 0x42A3... "stake(uint256)" <amount> --rpc-url sepolia --private-key $PRIVATE_KEY`
 
 ## What the protocol does
 
@@ -129,11 +157,13 @@ forge coverage             # ~99% lines on src/
 
 ## Rollback / reset
 
-Greenfield, anvil-only: reset the chain (`pkill anvil`) and redeploy — no
-migrations, no upgrade path (out of scope). The change itself lives under
-`openspec/changes/staking-protocol/` (proposal → specs → design → tasks → verify).
+Greenfield: reset the anvil chain (`pkill anvil`) and redeploy — no migrations,
+no upgrade path (out of scope). The change record lives under
+`openspec/changes/archive/2026-08-03-staking-protocol/` (proposal → specs →
+design → tasks → verify). The Sepolia deployment is a one-shot v1; contract
+upgrades are out of scope.
 
 ## Out of scope (v1)
 
 Frontend dApp, vesting/penalties, mintable emissions, multi-token rewards,
-ERC-4626 shares, permit, upgradeability, timelock, testnet deploy + verify.
+ERC-4626 shares, permit, upgradeability, timelock, mainnet deploy.
