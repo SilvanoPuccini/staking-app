@@ -6,6 +6,9 @@ import { UserPanel } from './components/UserPanel'
 import { StakeCard } from './components/StakeCard'
 import { ClaimCard } from './components/ClaimCard'
 import { WithdrawCard } from './components/WithdrawCard'
+import { Hero } from './components/Hero'
+import { WhySection } from './components/WhySection'
+import { HowItWorks } from './components/HowItWorks'
 
 function App() {
   const { isConnected } = useAccount()
@@ -23,37 +26,49 @@ function App() {
       </header>
 
       <main className="container">
-        <h1 className="page-title">Earn rewards by staking STK</h1>
+        <Hero />
+        <WhySection />
+        <HowItWorks />
 
-        <ProtocolStats />
-
-        {isConnected && !onRightChain && (
-          <div className="banner banner-warn">
-            <span>
-              You're on the wrong network. Switch to {CHAIN_NAME} to stake, claim and withdraw.
-            </span>
+        <section className="section app-section" id="app">
+          <div className="section-head">
+            <span className="section-eyebrow">Dashboard</span>
+            <h2 className="section-title">The App</h2>
+            <p className="section-subtitle">
+              Connect your wallet to stake STK, claim rewards and manage your position.
+            </p>
           </div>
-        )}
 
-        {isConnected && onRightChain && (
-          <>
-            <UserPanel />
+          <ProtocolStats />
 
-            <div className="card-grid">
-              <StakeCard />
-              <div className="card-stack">
-                <ClaimCard />
-                <WithdrawCard />
-              </div>
+          {isConnected && !onRightChain && (
+            <div className="banner banner-warn">
+              <span>
+                You're on the wrong network. Switch to {CHAIN_NAME} to stake, claim and withdraw.
+              </span>
             </div>
-          </>
-        )}
+          )}
 
-        {!isConnected && (
-          <p className="hint">
-            Connect your wallet to stake STK, claim rewards and manage your position.
-          </p>
-        )}
+          {isConnected && onRightChain && (
+            <>
+              <UserPanel />
+
+              <div className="card-grid">
+                <StakeCard />
+                <div className="card-stack">
+                  <ClaimCard />
+                  <WithdrawCard />
+                </div>
+              </div>
+            </>
+          )}
+
+          {!isConnected && (
+            <p className="hint">
+              Connect your wallet to stake STK, claim rewards and manage your position.
+            </p>
+          )}
+        </section>
       </main>
 
       <footer className="footer">
